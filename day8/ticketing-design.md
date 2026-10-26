@@ -168,4 +168,19 @@ Expired holds are returned to the pool automatically, because the update above t
 | Payment provider | We never store card numbers; the provider handles payment security. |
 | Background worker | Releases expired holds and sends emails without slowing down requests. |
 
-**How it survives the big sale:** the CDN and cache absorb the reads, the waiting room smooths the arrival spike, stateless servers scale out, and only about 1,000 hold attempts/second reach the primary database,
+**How it survives the big sale:** the CDN and cache absorb the reads, the waiting room smooths the arrival spike, stateless servers scale out, and only about 1,000 hold attempts/second reach the primary database, which a single well-indexed table can handle because each is a small, quick update.
+
+## 5. Trade-offs and Alternatives Considered
+
+1. **Hold duration (5 minutes).** Longer holds give users time to pay but let people block seats they never buy; shorter holds free seats faster but frustrate slow payers. We chose 5 minutes as a balance.
+2. **Waiting room vs. letting everyone in.** The waiting room adds complexity and makes some people wait, but without it the database could be overloaded and everyone would get errors. We accept the wait in exchange for stability and fairness.
+3. **Slightly stale seat map vs. always accurate.** Caching the seat map for 1-2 seconds means a user may click a seat that was just taken and get a `409`. We accept this because the database still guarantees correctness, and it reduces database reads dramatically.
+4. **Alternative: lock rows with `SELECT ... FOR UPDATE` instead of a conditional update.** It works, but holds locks longer and is easier to get wrong. The single conditional `UPDATE` is shorter and simpler.
+5. **Alternative: charge first, assign seats afterwards.** Rejected, because users could pay for seats that are no longer available.
+6. **Four-seat limit per user.** It stops one person buying out the show, but groups wanting more than four seats must use several accounts.
+
+## 6. Risks and Open Questions
+
+- **Bots** buying seats at machine speed: need rate limiting per user/IP and CAPTCHA in the waiting room.
+- **Payment provider slowness or outage** during a sale: need timeouts and a clear message that the hold is still valid.
+- **Primary database failure** mid-sale: replicas can take over, but a few seconds of failed holds are possible. Failover must be tested.
