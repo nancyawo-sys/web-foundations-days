@@ -1,0 +1,7 @@
+# Reflection
+
+The most difficult concept for me was system design, especially understanding how different components work together when an application has many users. Caching, horizontal scaling, database transactions and preventing double-booking were confusing at first. I overcame this by following the lessons step by step, practising with examples, and relating each idea to real applications. Working on QuickNotes also helped me see how the API, data model and front end connect to make an application work.
+
+Based on the feedback on my QuickNotes project, I would improve the delete feature and my error handling. The feedback showed that delete was missing, even though the API request helper was already prepared for it. I learned that having part of a feature ready is not enough; it must be fully implemented and tested. I would also improve my testing process, checking that adding, searching, deleting and refreshing notes all work correctly before I submit.
+
+Next, I want to learn Node.js and Express so I can build a real backend, and PostgreSQL so I can store and manage data in a real database. These skills will help me move from designing systems and building front-end features to developing complete applications for real users. I will also keep practising system design so I can make better technical decisions as I grow as a software engineer.
