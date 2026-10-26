@@ -11,10 +11,11 @@ TicketHub is a website that sells tickets for concerts and events. Most days tra
 
 **Functional**
 - Users can register and log in.
-- Users can browse and search events and see event details. Users can hold at most 4 seats per event.
+- Users can browse and search events and see event details.
 - Users can view the seat map with each seat's availability.
 - Users can hold seats temporarily (5 minutes) while they pay.
-- Users can pay for held seats and receive tickets. Four-seat limit per user. It stops one person buying out the show, but groups wanting more than four seats must use several accounts.
+- Users can hold at most 4 seats per event.
+- Users can pay for held seats and receive tickets.
 - Users can view their orders and tickets.
 
 **Non-functional**
@@ -123,11 +124,9 @@ UPDATE seats
 COMMIT;
 ```
 
-1. If two people click the same seat at the same time, the database handles one request first and changes the seat from “available” to “held”. When it reaches the second request, the seat is no longer available, so nothing changes and that person gets a 409 error. If someone picks several seats and one is taken, the whole request is cancelled (rolled back) so nobody ends up with half an order. A seat can only be marked “sold” if the same user still holds it and the hold has not expired. A unique key on each order also stops a double-clicked Pay button from charging twice.
-2. When holding several seats, all updates run in one transaction. If any seat returns 0 rows, we **roll back**, so the user never ends up with half an order.
-3. Payment happens only on a valid hold. After the payment provider confirms, a second transaction sets `status = 'sold'` and `order_id` **only if** `held_by = :user AND hold_expires_at > :now`. If the hold expired, nothing changes and the user gets `410 Gone` (and is refunded or never charged).
-4. The `idempotency_key` is unique, so a double-clicked "Pay" button or a retried request cannot create two orders.
-5. The cache never decides availability. It only shows the seat map; the database check above has the last word.
+If two people click the same seat at the same time, the database handles one request first and changes the seat from “available” to “held”. When it reaches the second request, the seat is no longer available, so nothing changes and that person gets a 409 error. If someone picks several seats and one is taken, the whole request is cancelled (rolled back) so nobody ends up with half an order. A seat can only be marked “sold” if the same user still holds it and the hold has not expired. A unique key on each order also stops a double-clicked Pay button from charging twice.
+
+The cache never decides availability. It only shows the seat map; the database check above has the last word.
 
 Expired holds are returned to the pool automatically, because the update above treats an expired hold as available. A background job also resets them so the seat map stays tidy.
 
@@ -169,19 +168,4 @@ Expired holds are returned to the pool automatically, because the update above t
 | Payment provider | We never store card numbers; the provider handles payment security. |
 | Background worker | Releases expired holds and sends emails without slowing down requests. |
 
-**How it survives the big sale:** the CDN and cache absorb the reads, the waiting room smooths the arrival spike, stateless servers scale out, and only about 1,000 hold attempts/second reach the primary database, which a single well-indexed table can handle because each is a small, quick update.
-
-## 5. Trade-offs and Alternatives Considered
-
-1. **Hold duration (5 minutes).** Longer holds give users time to pay but let people block seats they never buy; shorter holds free seats faster but frustrate slow payers. We chose 5 minutes as a balance.
-2. **Waiting room vs. letting everyone in.** The waiting room adds complexity and makes some people wait, but without it the database could be overloaded and everyone would get errors. We accept the wait in exchange for stability and fairness.
-3. **Slightly stale seat map vs. always accurate.** Caching the seat map for 1-2 seconds means a user may click a seat that was just taken and get a `409`. We accept this because the database still guarantees correctness, and it reduces database reads dramatically.
-4. **Alternative: lock rows with `SELECT ... FOR UPDATE` instead of a conditional update.** It works, but holds locks longer and is easier to get wrong. The single conditional `UPDATE` is shorter and simpler.
-5. **Alternative: charge first, assign seats afterwards.** Rejected, because users could pay for seats that are no longer available.
-
-## 6. Risks and Open Questions
-
-- **Bots** buying seats at machine speed: need rate limiting per user/IP and CAPTCHA in the waiting room.
-- **Payment provider slowness or outage** during a sale: need timeouts and a clear message that the hold is still valid.
-- **Primary database failure** mid-sale: replicas can take over, but a few seconds of failed holds are possible. Failover must be tested.
-- **Open question:** should one user be limited to a maximum of 4 seats per event for fairness? (Probably yes; to be decided.)
+**How it survives the big sale:** the CDN and cache absorb the reads, the waiting room smooths the arrival spike, stateless servers scale out, and only about 1,000 hold attempts/second reach the primary database,
